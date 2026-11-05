@@ -1,0 +1,934 @@
+---
+title: "Modelagem dos Fatores Socioeconômicos e Demográficos Associados à Mortalidade por Câncer nos Condados dos EUA"
+author: 
+  - "Amanda Rehder Cedro: 253507"
+  - "Danilo Antunes: 269151"
+  - "Iuri Santos Oliveira: 194610"
+  - "Pedro Galhardo Barbosa: 277218"
+header-includes:
+   - \usepackage[brazilian]{babel}
+bibliography: referencia.bib
+output:
+  bookdown::pdf_document2:
+    number_sections: true
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+options(scipen=9999)
+```
+
+```{r}
+# inclua os pacotes que for usar aqui, altere como preferir
+library(corrplot)
+library(readr)
+library(ggplot2)
+library(magrittr)
+library(e1071)
+library(dplyr)
+library(tidyr)
+library(car)
+library(bestglm)
+library(knitr)
+library(kableExtra)
+```
+
+
+\newpage
+# Introdução {#sec-intro}
+<!-- sua introdução aqui -->
+
+<!-- O seu texto deve apresentar o assunto, motivar e explicar ao leitor o objetivo.-->
+
+<!-- O objetivo, a(s) pergunta(s) específica(s) que você quer responder devem estar claras na introdução, e, lá na conclusão, você deve retomar o argumento e mostrar como resolveu o problema. -->
+
+<!-- Finalize com um parágrafo explicando o que está por vir nas próximas seções do relatório (muito brevemente), desta forma, muitas vezes a introdução é a última parte que escrevemos, pois deve motivar e dar um resumo rápido do que está por vir --> 
+
+<!-- Utilize cross-reference para mencionar as seções no texto, por exemplo: -->
+<!--  Na Seção \@ref(sec-banco), ... -->
+
+O câncer permanece sendo uma das principais causas de morbidade e mortalidade em escala global, representando um desafio complexo para a saúde pública. Embora os avanços médicos tenham aprimorado o diagnóstico e o tratamento, a distribuição da mortalidade pela doença não é uniforme, sendo frequentemente influenciada por uma teia de fatores socioeconômicos, demográficos e de acesso à saúde. Compreender como essas características populacionais se correlacionam com o impacto do câncer é fundamental para o desenvolvimento de políticas públicas direcionadas e eficazes.
+
+## Objetivos e Perguntas de Pesquisa
+
+Diante disso, este projeto tem como objetivo principal analisar a taxa de mortalidade por câncer em diferentes regiões, identificando quais fatores demográficos e socioeconômicos exercem influência significativa no aumento ou na diminuição desses índices. 
+
+Para tanto, este estudo buscará responder às seguintes perguntas de pesquisa:
+
+> **1.** Qual é o efeito da taxa de pobreza e do desemprego sobre a taxa de mortalidade por câncer, após controle por demais fatores?
+>
+> **2.** O tipo de cobertura de saúde privada está associado a menores níveis de mortalidade por câncer?
+>
+> **3.** O nível educacional da população (ensino médio e ensino superior ) exerce impacto significativo na redução da mortalidade?
+>
+> **4.** A composição racial do condado (percentual de brancos e outras raças) apresenta associação com a taxa de mortalidade, independentemente dos fatores socioeconômicos?
+>
+> **5.** Segundo o critério BIC, qual o melhor conjunto de variáveis para explicar a variabilidade da taxa de mortalidade por câncer entre os condados?
+
+## Estrutura do Trabalho
+Para a realização deste estudo, foi utilizado O banco de dados `cancer_reg.csv` [@dadoscancer], (disponível para consulta na Seção \@ref(sec-banco)). O trabalho está estruturado da seguinte forma:
+
+- **Limpeza e Tratamento de Dados:** Etapa dedicada à identificação de valores omissos e preparação da base.
+
+- **Análise Exploratória e Inferencial:** Investigação inicial do comportamento das variáveis e testes de hipóteses preliminares.(Seção \@ref(sec-exploratoria))
+
+- **Seleção de Variáveis:** Definição dos preditores de maior relevância teórica e estatística para o fenômeno. (Seção \@ref(sec-selecao))
+
+- **Modelagem Estatística:** Ajuste do modelo preditivo/explicativo para mensurar o impacto real dos fatores selecionados. (Seção \@ref(sec-modelo))
+
+- **Resultados e Discussão:** Apresentação visual dos dados por meio de gráficos e tabelas, acompanhada de uma análise crítica sobre o ajuste do modelo, suas limitações e as conclusões práticas obtidas. (Seções \@ref(sec-discussao) e \@ref(sec-apendice))
+
+# Banco de dados {#sec-banco}
+
+```{r}
+# código para carregar seu banco de dados 
+# caso sua base de dados seja grande e exceda os limites do moodle, inclua aqui um código que baixe os dados a partir de um link/google drive, certifique-se que qualquer pessoa tenha acesso/permissao para baixar dados
+# Importação de colunas específicas
+colunas_desejadas <- c(
+  "TARGET_deathRate","incidenceRate", "medIncome", "povertyPercent", "studyPerCap", 
+  "MedianAge", "PercentMarried", "PctHS25_Over", "PctBachDeg25_Over", 
+  "PctUnemployed16_Over", "PctPrivateCoverage", "PctPublicCoverageAlone", 
+  "PctWhite", "PctBlack", "PctAsian", "PctOtherRace"
+)
+
+dados_cancer <- read_csv("cancer_reg.csv", col_select = all_of(colunas_desejadas))
+```
+
+<!-- sua descriçao do banco de dados/variáveis aqui. Coloque a fonte/referência do banco de dados, coloque em anexo/link para codebook, caso tenha muitas variáveis, para nao deixar essa seçao muito extensa -->
+
+O banco de dados utilizado foi o `cancer_reg.csv`, disponível em \url{https://drive.google.com/drive/folders/1vJH7oQjzz1OAXWJ30kXJccq4mSpdOOKk}. Este banco contém dados relacionados à mortalidade por câncer e diversos fatores demográficos, socioeconômicos e de saúde para condados dos EUA. Após análises preliminares, foram selecionadas variáveis específicas consideradas válidas para o estudo devido à sua relação com o tema.
+
+A variável alvo é a `TARGET_deathRate`, que retrata o número médio de mortes por câncer para cada 100 mil habitantes em um determinado condado. 
+Abaixo foram listados as variáveis preditoras utilizadas e seus respectivos significados:
+
+**Variáveis Preditores:**  
+
+- `incidenceRate`: Média de diagnósticos de câncer para cada 100 mil habitantes.  
+- `medIncome`: Renda mediana do condado.  
+- `povertyPercent`: Percentual da população do condado em situação de pobreza.  
+- `studyPerCap`: Número *per capita* de ensaios clínicos relacionados ao câncer.  
+- `MedianAge`: Idade meidana dos habitantes do condado.  
+- `PercentMarried`: Percentual dos habitantes casados.  
+- `PctHS25_Over`: Percentual da população com 25 anos ou mais com ensino médio completo.  
+- `PctBachDeg25_Over`: Percentual da população com 25 anos ou mais com bacharelado completo.  
+- `PctUnemployed16_Over`: Percentual da população com 16 anos ou mais desempregada.  
+- `PctPrivateCoverage`: Percentual de habitantes com plano de saúde privado.  
+- `PctPublicCoverageAlone`: Percentual de habitantes com plano de saúde público exclusivamente.  
+- `PctWhite`: Percentual de habitantes que se identificam como brancos.  
+- `PctBlack`: Percentual de habitantes que se identificam como negros.  
+- `PctAsian`: Percentual de habitantes que se identificam como asiáticos.  
+- `PctOtherRace`: Percentual de habitantes que se identificam como outra raça.
+
+# Análise exploratória {#sec-exploratoria}
+
+<!-- Apresente análise exploratória relevante dos dados para auxiliar nos passos iniciais da busca por um modelo.  -->
+
+<!-- * Apresente uma breve análise exploratória utilizando gráficos com o objetivo de  -->
+<!--    estudar a associação de das variáveis preditoras com a variável resposta.  -->
+
+<!-- Qualquer tabela /figura presente no relatório precisa ser introduzida e referenciada no texto. Explique ao leitor o propósito das mesmas. -->
+
+<!--    Considere tipos adequados de gráficos para cada tipo de variável e objetivos. -->
+<!--    * Podem fazer vários gráficos, para explorar, mas, no relatório, sejam suscintos, escolhendo apenas os principais. -->
+<!--    * Todos os gráficos escolhidos por você para serem incluídos no relatório devem conter legendas explicativas  -->
+<!--    (*captions*) claras e informativas, indicando o que está sendo analisado  -->
+<!--    e destacando os principais padrões/conclusões observados.  -->
+<!--    Caso não tenha nada relevante a ser comentado, não inclua no relatório. -->
+<!--    * Apresente sua análise e comente os resultados, reforçando que o objetivo  -->
+<!--    principal é estudar a associaçao de cada variável com a variável resposta.  -->
+<!--    * Com base na análise exploratória, aplique filtros e/ou reagrupe/filtre níveis de variáveis categóricas com pouquíssimas observações, etc...   -->
+
+<!-- Caso decida utilizar transformação de alguma variável, criar outra variável, padronizar, etc... Aqui é o momento de mencionar/motivar essas decisões. Se for este o caso, acrescente um parágrafo explicando as transformações que serão feitas (preprocessamento)-->
+
+<!-- Alguma variável será descartada logo de início? Justifique, se for o caso-->
+
+<!-- Algumas obs serão descartadas logo de início? Justifique, se for o caso-->
+
+<!-- Apresente as estatísticas e gráficos que ajudam a atingir o objetivo definido na introdução-->
+
+<!-- Gráficos exploratórios/univariados que você fez apenas para "limpar" os dados não precisam, necessariamente, aparecer no texto do relatório, apenas inclua gráficos que auxiliem no objetivo principal. -->
+
+
+<!-- Deixe claro qual o que será excluído, o que será criado/transformado. -->
+Com as variáveis de interesse decididas, se iniciou a etapa de exploração visual e estatística dos dados que teve um foco mais investigativo, onde cada visualização subsequente foi guiada por uma pergunta central, revelando os padrões de assimetria, a influência direta do poder aquisitivo na sobrevida, os perfis de cobertura de saúde e a demografia racial que caracterizam o panorama do câncer nos condados estudados.
+
+Essas análises foram realizadas com o objetivo de entender de que forma cada variável se relaciona com a variável resposta.
+
+## Análise Univariada
+```{r fig-dist-mortalidade, fig.cap = "Distribuição da taxa de mortalidade por câncer (mortes por 100 mil habitantes)", fig.align = 'center', fig.width = 6.3, fig.height = 3, fig.pos = "H"}
+# Carregar bibliotecas necessárias
+library(ggplot2)
+library(e1071)  # para skewness
+
+# Função para calcular a moda
+calcular_moda <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+# Cálculo das estatísticas
+valores <- dados_cancer$TARGET_deathRate
+media <- mean(valores, na.rm = TRUE)
+
+texto_estatisticas <- paste0(
+  "Assimetria: ", round(skewness(valores, type = 1), 2), "\n",
+  "Média: ", round(media, 2), "\n",
+  "Moda: ", round(calcular_moda(valores), 2), "\n",
+  "Mediana: ", round(median(valores, na.rm = TRUE), 2), "\n",
+  "Variância: ", round(var(valores, na.rm = TRUE), 2)
+)
+
+mediana <- round(median(valores, na.rm = TRUE), 2)
+assimetria <- round(skewness(valores, type = 1), 2)
+# Criar o gráfico com as cores especificadas
+grafico <- ggplot(dados_cancer, aes(x = TARGET_deathRate)) +
+  geom_histogram(aes(y = after_stat(density)), 
+                 fill = "#25626d",  # Barras na cor laranja
+                 color = "white", 
+                 bins = 30) +
+  geom_density(color = "#ff9038", linewidth = 1) +  # Linha da densidade em azul
+  geom_vline(xintercept = media, color = "#000000", linewidth = 1) +  # Linha da média em verde escuro
+  annotate("text", x = min(valores, na.rm = TRUE) - 1, y = Inf, 
+           label = texto_estatisticas, hjust = 0, vjust = 1.2, 
+           family = "mono", size = 3.5) +
+  labs(x = "Mortes por 100 mil habitantes", y = "Densidade") +
+  theme_minimal() +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.major = element_line(color = "gray90"),
+        panel.grid.minor = element_line(color = "gray95"))
+
+# Salvar com fundo transparente
+ggsave("histograma_densidade.png", 
+       plot = grafico,
+       width = 10, height = 7, 
+       dpi = 300,
+       bg = "transparent")
+
+# Exibir o gráfico
+print(grafico)
+```
+
+Ao analisarmos o gráfico da Figura \@ref(fig:fig-dist-mortalidade), observa-se uma distribuição que se aproxima de uma curva normal, em que a média de mortes é de `r media` por 100 mil habitantes e a mediana é `r mediana`, que são valores muito próximos. Já o coeficiente de assimetria de `r assimetria` confirma uma leve cauda para a direita (assimetria positiva), indicando que, apesar da maioria dos condados girar em torno da média, há um pequeno grupo de locais enfrentando taxas de mortalidade mais graves, chegando a passar de 300 mortes por 100 mil habitantes.
+
+```{r fig-dist-incidencia, fig.cap = "Distribuição da taxa de incidência de câncer (casos por 100 mil habitantes)", fig.align = 'center', fig.width = 6.3, fig.height = 3, fig.pos = "H"}
+# Carregar bibliotecas necessárias
+library(ggplot2)
+library(e1071)  # para skewness
+
+# Função para calcular a moda
+calcular_moda <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+# Cálculo das estatísticas
+valores_incidencia <- dados_cancer$incidenceRate
+media_inc          <- mean(valores_incidencia, na.rm = TRUE)
+
+texto_estatisticas_inc <- paste0(
+  "Assimetria :   ", round(skewness(valores_incidencia, type = 1, na.rm = TRUE), 2), "\n",
+  "Média      : ", round(media_inc, 2), "\n",
+  "Moda       : ", round(calcular_moda(valores_incidencia), 2), "\n",
+  "Mediana    : ", round(median(valores_incidencia, na.rm = TRUE), 2), "\n",
+  "Variância  :", round(var(valores_incidencia, na.rm = TRUE), 2)
+)
+
+assimetria2 <- round(skewness(valores_incidencia, type = 1, na.rm = TRUE), 2)
+variancia <- round(var(valores_incidencia, na.rm = TRUE), 2)
+media2 <-  round(media_inc, 2)
+
+# Construção do Gráfico
+grafico_incidencia <- ggplot(dados_cancer, aes(x = incidenceRate)) +
+  geom_histogram(aes(y = after_stat(density)), 
+                 fill = "#25626d",  # Barras na cor laranja
+                 color = "white", 
+                 bins = 30) +
+  geom_density(color = "#ff9038", linewidth = 1) +  # Linha da densidade em azul escuro
+  geom_vline(xintercept = media_inc, color = "#000000", linewidth = 1) +  # Linha da média em verde escuro
+  annotate(
+    "text", 
+    x = max(valores_incidencia, na.rm = TRUE), y = Inf, 
+    label = texto_estatisticas_inc, 
+    hjust = 1, vjust = 1.2, 
+    family = "mono", size = 4
+  ) +
+  labs(
+    x = "Casos por 100 mil habitantes (incidenceRate)",
+    y = "Densidade"
+  ) +
+  theme_minimal() +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.major = element_line(color = "gray90"),
+        panel.grid.minor = element_line(color = "gray95")) +
+  coord_cartesian(clip = "off")
+
+# Salvar com fundo transparente
+ggsave("histograma_incidencia.png", 
+       plot = grafico_incidencia,
+       width = 10, height = 7, 
+       dpi = 300,
+       bg = "transparent")
+
+# Exibir o gráfico
+print(grafico_incidencia)
+```
+
+A Figura \@ref(fig:fig-dist-incidencia) nos mostra um cenário um pouco diferente da mortalidade. A distribuição da taxa de incidência apresenta uma assimetria mais pronunciada (`r assimetria2`) e uma variância muito considerável (`r variancia`), o que significa que o diagnóstico de novos casos é bem volátil entre as regiões. Também percebe-se que a grande maioria dos condados se espreme perto da média de `r media2` casos, mas a cauda longa à direita mostra que existem condados que lidam com surtos epidêmicos da doença, registrando mais de 1.000 novos casos por 100 mil habitantes ao ano.
+
+## Análise Bivariada (Socioeconómica e Demográfica)
+
+```{r fig-mortalidade-renda, fig.cap = "Taxa de mortalidade por câncer segundo faixa de renda mediana do condado", fig.align = 'center', fig.width = 5, fig.height = 3, fig.pos = "H"}
+# Mortalidade por Câncer segundo a Faixa de Renda do Condado
+
+# Criando categorias de renda baseadas nos tercis
+dados_cancer <- dados_cancer %>%
+  mutate(Faixa_Renda = cut(medIncome, 
+                           breaks = quantile(medIncome, probs = c(0, 0.33, 0.66, 1), na.rm = TRUE),
+                           labels = c("Renda Baixa", "Renda Média", "Renda Alta"),
+                           include.lowest = TRUE))
+
+# Construção do Boxplot
+ggplot(dados_cancer, aes(x = Faixa_Renda, y = TARGET_deathRate, fill = Faixa_Renda)) +
+  geom_boxplot(alpha = 0.75, color = "#2c3e50", outlier.alpha = 0.4) + 
+  scale_fill_manual(values = c("Renda Baixa" = "#aed6f1", "Renda Média" = "#3498db", "Renda Alta" = "#21618c")) +
+  labs(
+    x = "Faixa de Renda Mediana",
+    y = "Taxa de Mortalidade (por 100 mil)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    axis.text.x = element_text(vjust = 0.5),
+    axis.title.x = element_text(face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(face = "bold", margin = margin(r = 10))
+  )
+```
+
+Cruzando os dados socioeconômicos na Figura \@ref(fig:fig-mortalidade-renda) , a resposta é visualmente sutil, mas notável, pois há uma tendência de queda a cada “degrau” na taxa de mortalidade à medida que a faixa de renda cresce. Além disso, temos que o condado de "Renda Baixa" tem a mediana de mortalidade mais alta (perto de 200 mortes) e apresenta maior dispersão e presença de outliers críticos. Já nos condados de "Renda Alta", a caixa do boxplot inteira é puxada para baixo (mediana próxima a 165 mortes), indicando que o acesso a recursos financeiros está associado à menores taxas de mortalidade.
+
+```{r fig-cobertura-saude, fig.cap = "Distribuição da cobertura de saúde (privada vs pública exclusivamente) nos condados", fig.align = 'center', fig.width = 5, fig.height = 3, fig.pos = "H"}
+# Distribuição do Tipo de Cobertura de Saúde nos Condados
+# Transformação e construção do Boxplot
+dados_cancer %>%
+  select(PctPrivateCoverage, PctPublicCoverageAlone) %>%
+  pivot_longer(cols = everything(), names_to = "Tipo_Cobertura", values_to = "Percentual") %>%
+  ggplot(aes(x = Tipo_Cobertura, y = Percentual, fill = Tipo_Cobertura)) +
+  geom_boxplot(alpha = 0.75, color = "#2c3e50", outlier.alpha = 0.4) +
+  scale_x_discrete(labels = c("PctPrivateCoverage" = "Plano Privado", "PctPublicCoverageAlone" = "Plano Público Exclusivamente")) +
+  scale_fill_manual(values = c("PctPrivateCoverage" = "#25626d", "PctPublicCoverageAlone" = "#2c3e50")) +
+  labs(
+    x = "Tipo de Cobertura",
+    y = "Percentual da População (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    axis.text.x = element_text(vjust = 0.5),
+    axis.title.x = element_text(face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(face = "bold", margin = margin(r = 10))
+  )
+```
+
+O boxplot, visto na Figura  \@ref(fig:fig-cobertura-saude), mostra uma forte predominância do setor privado nos Estados Unidos. Nota-se que, em média, a cobertura por planos privados protege mais de 60% da população na maior parte dos condados,  ao contrário da dependência exclusiva do plano público de saúde, que é significativamente menor, mantendo sua mediana abaixo dos 20% da população. A ideia mais lógica por trás disso é que a saúde local é amplamente mercantilizada e bastante atrelada ao emprego ou capacidade de pagamento individual.
+
+```{r fig-composicao-racial, fig.cap = "Composição racial média dos condados", fig.align = 'center', fig.width = 5, fig.height = 3, fig.pos = "H"}
+# Composição Racial Média dos Condados
+
+# Transformação dos dados para formato longo
+dados_raca <- dados_cancer %>%
+  summarise(
+    Brancos   = mean(PctWhite, na.rm = TRUE),
+    Negros    = mean(PctBlack, na.rm = TRUE),
+    Asiaticos = mean(PctAsian, na.rm = TRUE),
+    Outras    = mean(PctOtherRace, na.rm = TRUE)
+  ) %>%
+  pivot_longer(everything(), names_to = "Grupo", values_to = "Percentual")
+
+# Construção do Gráfico de Barras
+ggplot(dados_raca, aes(x = reorder(Grupo, Percentual), y = Percentual, fill = Grupo)) +
+  geom_col(alpha = 0.85, color = "#2c3e50", width = 0.7) +
+  scale_fill_manual(values = c(
+    "Brancos"   = "#34495e", 
+    "Negros"    = "#3498db", 
+    "Asiáticos" = "#95a5a6", 
+    "Outras"    = "#bdc3c7"
+  )) +
+  labs(
+    x = NULL,
+    y = "Percentual Médio (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    axis.text.x = element_text(vjust = 0.5, face = "bold"),
+    axis.title.y = element_text(face = "bold", margin = margin(r = 10))
+  )
+```
+
+A Figura \@ref(fig:fig-composicao-racial) apresenta o mapeamento do perfil étnico médio dos locais estudados, revelando uma forte homogeneidade demográfica, com uma população autodeclarada branca representando um percentual médio majoritário que ultrapassa os 80% nos condados analisados. O segundo grupo mais presente é a população negra, registrando uma média próxima a 10%, enquanto comunidades de origem asiática ou classificadas como outras raças somam participações quase marginais na média global.
+
+
+
+
+# Análise de Correlação e Seleção de Variáveis {#sec-selecao}
+
+Inicialmente, para a seleção das variáveis, foram utilizadas funções para compreender melhor o banco de dados, sendo verificado e confirmado que não havia valores faltantes nas colunas utilizadas. Além disso, foi criada uma matriz de correlação para entender como as variáveis se relacionam.
+
+```{r fig-correlacao, fig.cap = "Matriz de correlação entre as variáveis do estudo.", fig.align = 'center', fig.width = 6, fig.height = 4, fig.pos = "H"}
+colunas_desejadas <- c(
+  "TARGET_deathRate","incidenceRate", "medIncome", "povertyPercent", "studyPerCap", 
+  "MedianAge", "PercentMarried", "PctHS25_Over", "PctBachDeg25_Over", 
+  "PctUnemployed16_Over", "PctPrivateCoverage", "PctPublicCoverageAlone", 
+  "PctWhite", "PctBlack", "PctAsian", "PctOtherRace"
+)
+
+dados_cancer <- read_csv("cancer_reg.csv", col_select = all_of(colunas_desejadas))
+
+
+# Verificando colunas com muitos NAs
+colunas_NA <- colSums(is.na(dados_cancer))
+
+# criando a matriz de correlação
+matriz_cor <- cor(dados_cancer, use = "complete.obs")
+corrplot(matriz_cor, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45, tl.cex = 0.6)
+
+```
+A Figura \@ref(fig:fig-correlacao) é um gráfico de calor configurado como uma matriz de correlação. Nela, é possível identificar as variáveis que mais possuem correlação tanto entre si quanto com a variável resposta (`TARGET_deathRate`). A primeira linha é a de maior interesse para a construção do modelo, uma vez que ela traz as correlações das variáveis independentes com a variável resposta.
+
+Para a interpretação dos resultados, basta observar a tonalidade dos quadrantes, tons azulados representam correlações positivas, enquanto tons avermelhados indicam correlações negativas. Quanto maior a intensidade da cor (seja azul ou vermelha), mais forte é a correlação linear entre as variáveis, ao passo que tons próximos ao branco indicam ausência de associação linear. 
+
+É importante ressaltar que mesmo que as variáveis tenham uma correlação alta com a variável resposta, é importante analisar se elas não tem uma multicolinearidade com outras variáveis, pois podem estar demonstrando os mesmos fatores e podem, consequentemente, acabar prejudicando o ajuste do modelo.
+
+Observa-se que as variáveis `incidenceRate`, `medIncome`, `povertyPercent`, `PctHS25_Over`, `PctBachDeg25_Over`, `PctUnemployed16_Over`, `PctPrivateCoverage` e `PctPublicCoverageAlone` possuem as maiores correlações lineares com a variável resposta.
+
+
+A partir disso, foi realizado o primeiro modelo de regressão [@montgomery2021introduction], com todos os dados, verificando as estatísticas sumárias, a tabela ANOVA e o valor VIF das variáveis.
+
+
+```{r tab-modelo1-summary}
+modelo1 <- lm(TARGET_deathRate ~ ., data = dados_cancer)
+summary_modelo1 <- summary(modelo1)
+
+# Extraindo coeficientes para tabela
+dt_coeficientes <- data.frame(
+  "Variável" = rownames(summary_modelo1$coefficients),
+  Estimativa = round(summary_modelo1$coefficients[, 1], 4),
+  Erro_Padrao = round(summary_modelo1$coefficients[, 2], 4),
+  Valor_t = round(summary_modelo1$coefficients[, 3], 4),
+  p_valor = round(summary_modelo1$coefficients[, 4], 4)
+)
+
+# Legenda reescrita sem caracteres ocultos
+kable(dt_coeficientes, booktabs = TRUE, 
+      caption = "Estimativas dos coeficientes do modelo de regressão com todas as variáveis") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+```{r tab-modelo1-anova}
+anova_modelo1 <- anova(modelo1)
+
+# Extraindo tabela ANOVA
+dt_anova <- data.frame(
+  Fonte = rownames(anova_modelo1),
+  SQ = round(anova_modelo1$`Sum Sq`, 2),
+  gl = anova_modelo1$`Df`,
+  QM = round(anova_modelo1$`Mean Sq`, 2),
+  F_valor = round(anova_modelo1$`F value`, 2),
+  p_valor = round(anova_modelo1$`Pr(>F)`, 4)
+)
+kable(dt_anova, booktabs = TRUE, caption = "Tabela ANOVA do modelo com todas as variáveis") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r tab-modelo1-vif}
+vif_modelo1 <- vif(modelo1)
+
+# Convertendo VIF para tabela
+dt_vif <- data.frame(
+  Variavel = names(vif_modelo1),
+  VIF = round(vif_modelo1, 2),
+  GVIF = ifelse(is.null(attr(vif_modelo1, "names")), NA, round(vif_modelo1, 2))
+)
+kable(dt_vif[, 1:2], booktabs = TRUE, caption = "Fatores de Inflação da Variância (VIF) para cada variável preditora") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Ao analisar as Tabelas \@ref(tab:tab-modelo1-summary), \@ref(tab:tab-modelo1-anova) e \@ref(tab:tab-modelo1-vif), é possível identificar que algumas variáveis aparentam ser insignificantes devido a terem um p-valor elevado (> 0,05) no teste t e possuírem um VIF baixo (< 5), indicando ausência de multicolinearidade. Essas variáveis são: `medIncome`, `studyPerCap`, `MedianAge`, `PercentMarried`, `PctBlack` e `PctAsian`. As variáveis `PctBlack` e `PctAsian` foram separadas para análise posterior, enquanto as demais são estudadas isoladamente por meio de um modelo reduzido, pois sua importância pode estar sendo encoberta pelas outras variáveis.
+
+```{r tab-modelo-reduz1-summary}
+modelo_reduz1 <- lm(TARGET_deathRate ~ studyPerCap + MedianAge + medIncome + PercentMarried, data = dados_cancer)
+summary_reduz1 <- summary(modelo_reduz1)
+
+# Extraindo coeficientes para tabela
+dt_coeficientes_reduz1 <- data.frame(
+  Variavel = rownames(summary_reduz1$coefficients),
+  Estimativa = round(summary_reduz1$coefficients[, 1], 4),
+  Erro_Padrao = round(summary_reduz1$coefficients[, 2], 4),
+  Valor_t = round(summary_reduz1$coefficients[, 3], 4),
+  p_valor = round(summary_reduz1$coefficients[, 4], 4)
+)
+
+kable(dt_coeficientes_reduz1, booktabs = TRUE, caption = "Estimativas dos coeficientes do modelo reduzido (studyPerCap + MedianAge + medIncome + PercentMarried)") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r tab-modelo-reduz1-anova}
+anova_reduz1 <- anova(modelo_reduz1)
+
+# Extraindo tabela ANOVA
+dt_anova_reduz1 <- data.frame(
+  Fonte = rownames(anova_reduz1),
+  SQ = round(anova_reduz1$`Sum Sq`, 2),
+  gl = anova_reduz1$`Df`,
+  QM = round(anova_reduz1$`Mean Sq`, 2),
+  F_valor = round(anova_reduz1$`F value`, 2),
+  p_valor = round(anova_reduz1$`Pr(>F)`, 4)
+)
+
+kable(dt_anova_reduz1, booktabs = TRUE, caption = "Tabela ANOVA do modelo reduzido") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+O modelo reduzido apresentado na Tabela \@ref(tab:tab-modelo-reduz1-summary) mostra que não é possível comprovar que `studyPerCap` e `MedianAge` tenham relação significativa com a variável alvo. Assim, elas serão excluídas do modelo. Porém, as variáveis `medIncome` e `PercentMarried` apresentam um p-valor baixo, o que indica que podem ser úteis.
+
+```{r}
+dados_alterados <- dados_cancer
+dados_alterados$studyPerCap <- NULL
+dados_alterados$MedianAge <- NULL
+```
+
+Para avaliar mais profundamente o impacto de `medIncome` e `percentMarried`, será usado o coeficiente de determinação parcial visto a seguir.
+
+```{r tab-r-parcial}
+modelo_completo <- lm(TARGET_deathRate ~ ., data = dados_alterados)
+modelo_reduz2 <- lm(TARGET_deathRate ~ . -medIncome, data = dados_alterados)
+
+SQE_completo <- deviance(modelo_completo) # SQE modelo completo
+SQE_reduz1 <- deviance(modelo_reduz2) # SQE modelo sem medIncome
+
+SQReg1 <- SQE_reduz1 - SQE_completo
+
+# coeficiente de determinação parcial de TARGET_deathRate com medIncome:
+R1 <- SQReg1 / SQE_reduz1 
+
+modelo_reduz3 <- lm(TARGET_deathRate ~ . -PercentMarried, data = dados_alterados)
+
+SQE_completo <- deviance(modelo_completo) # SQE modelo completo
+SQE_reduz2 <- deviance(modelo_reduz3) # SQE modelo sem PercentMarried
+
+SQReg2 <- SQE_reduz2 - SQE_completo
+
+# coeficiente de determinação parcial de TARGET_deathRate com PercentMarried:
+R2 <- SQReg2 / SQE_reduz2 
+dt_r_parcial <- data.frame(
+  Variavel = c("medIncome", "PercentMarried"),
+  `R_Quadrado_Parcial` = round(c(R1, R2), 6)
+)
+
+kable(dt_r_parcial, booktabs = TRUE, caption = "Coeficientes de determinação parcial") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+A Tabela \@ref(tab:tab-r-parcial) indica que, apenas 0,093% da variação em `TARGET_deathRate` não pode ser explicada no modelo se a variável `medIncome` não for incluìda. De forma semelhante, apenas 0,057% da variação é explicada pela inclusão de `PercentMarried`. Portanto, é seguro dizer que o impacto de ambas as variáveis é insignificante para o modelo.
+
+```{r}
+dados_alterados$medIncome <- NULL
+dados_alterados$PercentMarried <- NULL
+```
+
+Além disso, ao analisar novamente as variáveis, é possível perceber que `PctPrivateCoverage` e `PctPublicCoverageAlone` estão correlacionadas e buscam explicar o mesmo fenômeno (acesso da população a planos de saúde públicos/privados). Nesse caso, cria-se um modelo para cada uma delas comparando-as.
+
+```{r tab-comparacao-cobertura}
+modelo_publico <- lm(TARGET_deathRate ~ . -PctPrivateCoverage, data = dados_alterados)
+modelo_privado <- lm(TARGET_deathRate ~ . -PctPublicCoverageAlone, data = dados_alterados)
+
+summary_publico <- summary(modelo_publico)
+summary_privado <- summary(modelo_privado)
+
+dt_comparacao <- data.frame(
+  Modelo = c("Com PctPrivateCoverage", "Com PctPublicCoverageAlone"),
+  R_Quadrado_Ajustado = round(c(summary_publico$adj.r.squared, summary_privado$adj.r.squared), 6)
+)
+
+kable(dt_comparacao, booktabs = TRUE, 
+      caption = "Comparação do R² ajustado entre os modelos") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Na Tabela \@ref(tab:tab-comparacao-cobertura), nota-se que o R² ajustado é maior na regressão que utiliza a `PctPrivateCoverage`, dessa forma, ela é mantida no modelo e a `PctPublicCoverageAlone` é excluída.
+
+```{r}
+dados_alterados$PctPublicCoverageAlone <- NULL
+```
+
+Já para a análise das variáveis `PctBlack` e `PctAsian`, é necessário verificar suas correlações com `PctWhite` e o p-valor dos testes t após as mudanças realizadas no banco de dados.
+
+```{r}
+cor_PctBlack_PctWhite <- cor(dados_alterados$PctBlack, dados_alterados$PctWhite)
+cor_PctWhite_PctAsian <- cor(dados_alterados$PctWhite, dados_alterados$PctAsian)
+```
+```{r tab-modelo2}
+modelo2 <- lm(TARGET_deathRate ~ ., data = dados_alterados)
+summary_modelo2 <- summary(modelo2)
+
+# Tabela de coeficientes do modelo2
+dt_modelo2 <- data.frame(
+  Variavel = rownames(summary_modelo2$coefficients),
+  Estimativa = round(summary_modelo2$coefficients[, 1], 4),
+  Erro_Padrao = round(summary_modelo2$coefficients[, 2], 4),
+  Valor_t = round(summary_modelo2$coefficients[, 3], 4),
+  p_valor = round(summary_modelo2$coefficients[, 4], 4)
+)
+
+kable(dt_modelo2, booktabs = TRUE, 
+      caption = "Coeficientes do modelo com todas as variáveis (modelo2)") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+```{r tab-modelo3}
+modelo3 <- lm(TARGET_deathRate ~ . -PctBlack -PctAsian, data = dados_alterados)
+summary_modelo3 <- summary(modelo3)
+
+# Tabela de coeficientes do modelo3
+dt_modelo3 <- data.frame(
+  Variavel = rownames(summary_modelo3$coefficients),
+  Estimativa = round(summary_modelo3$coefficients[, 1], 4),
+  Erro_Padrao = round(summary_modelo3$coefficients[, 2], 4),
+  Valor_t = round(summary_modelo3$coefficients[, 3], 4),
+  p_valor = round(summary_modelo3$coefficients[, 4], 4)
+)
+
+kable(dt_modelo3, booktabs = TRUE, 
+      caption = "Coeficientes do modelo sem PctBlack e PctAsian (modelo3)") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+Observando as Tabelas \@ref(tab:tab-modelo2) e \@ref(tab:tab-modelo3), percebe-se que `PctBlack` possui alta correlação com `PctWhite`, o que indica que ambas podem estar representando o mesmo fenômeno. Além disso, não temos evidência estatística para dizer que as variáveis testadas afetam a variável alvo devido ao resultado dos testes t. Ainda mais o modelo sem as colunas em questão, apresenta um R² levemente maior. Logo, essas features serão excluídas para garantir um modelo mais enxuto, prevenindo o overfitting.
+
+Por fim, é aplicado o método Best Subsets [@henderson1981building], que verifica automaticamente qual o melhor modelo de acordo com algum critério. Neste caso, é utilizado como critério o BIC (Bayesian Information Criterion) para encontrar o modelo que melhor explica os dados usando a menor quantidade possível de parâmetros.
+
+```{r tab-melhor-modelo}
+Xy <- dados_cancer %>% 
+  dplyr::rename(y = TARGET_deathRate) %>% 
+  dplyr::relocate(y, .after = last_col()) %>% 
+  as.data.frame()
+
+modelos <- bestglm(Xy, IC = "BIC")
+
+melhor <- which(modelos$Subsets$BIC == min(modelos$Subsets$BIC))
+numvar <- ncol(Xy) - 1
+varincluidas <- modelos$Subsets[melhor, 2:(numvar + 1)]
+
+# Lista das variáveis selecionadas
+variaveis_selecionadas <- names(varincluidas)[which(varincluidas == 1)]
+
+dt_melhor_modelo <- data.frame(
+  Variavel = variaveis_selecionadas
+)
+
+kable(dt_melhor_modelo, booktabs = TRUE, 
+      caption = "Variáveis selecionadas no melhor modelo segundo critério BIC") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Os resultados do teste vistos na Tabela \@ref(tab:tab-melhor-modelo) indicam que o modelo mais otimizado contém as mesmas variáveis escolhidas nas análises prévias e, portanto, fortalecem as escolhas realizadas.
+
+Como complemento, a Tabela \@ref(tab:tab-excluidas) a seguir apresenta as variáveis que foram excluídas do modelo final, juntamente com os respectivos motivos baseados nas análises estatísticas realizadas.
+
+```{r tab-excluidas}
+library(kableExtra)
+
+# Criando a tabela com as variáveis excluídas e seus motivos
+dt_excluidas <- data.frame(
+  Variável = c("medIncome", "studyPerCap", "MedianAge", "PercentMarried", 
+               "PctBlack", "PctAsian", "PctPublicCoverageAlone"),
+  Motivo = c("R² parcial muito baixo (0,093%)",
+             "p-valor alto no modelo reduzido",
+             "p-valor alto no modelo reduzido",
+             "R² parcial muito baixo (0,057%)",
+             "Alta correlação com PctWhite + p-valor alto",
+             "p-valor alto",
+             "R² ajustado menor que o modelo com PctPrivateCoverage")
+)
+
+kable(dt_excluidas, booktabs = TRUE, 
+      caption = "Variáveis excluídas do modelo final e respectivos motivos") |>
+  kable_styling(latex_options = "HOLD_position")
+```
+
+# Modelo Proposto {#sec-modelo}
+
+
+<!-- Apresente o modelo ajustado -->
+
+<!-- Voce pode criar subseções se necessário -->
+
+<!-- Interprete parametros, forneça IC interessantes de acordo com os objetivos, apresente gráficos de interaçoes/estimativas se necessário -->
+
+<!-- Apresente o gráfico de predito x observado. Inclua uma reta coef=1 para auxiliar na avaliaçao-->
+## Estimativas e Significância dos Coeficientes
+
+O modelo final selecionado para explicar a taxa de mortalidade por câncer (`TARGET_deathRate`) é apresentado na Tabela \@ref(tab:tabela-modelo-final). 
+
+Foram incluídas as variáveis que demonstraram relevância estatística e parcimônia segundo o critério BIC [@schwarz1978estimating]: `incidenceRate`, `povertyPercent`, `PctHS25_Over`, `PctBachDeg25_Over`, `PctUnemployed16_Over`, `PctPrivateCoverage`, `PctWhite` e `PctOtherRace`.
+```{r tabela-modelo-final}
+library(flextable)
+library(officer)
+
+# Ajuste do modelo final
+modelo_final <- lm(TARGET_deathRate ~ incidenceRate + povertyPercent + 
+                     PctHS25_Over + PctBachDeg25_Over + PctUnemployed16_Over + 
+                     PctPrivateCoverage + PctWhite + PctOtherRace, 
+                   data = dados_alterados)
+
+# Resumo e intervalos de confiança
+coeficientes <- summary(modelo_final)$coefficients
+ic_conf <- confint(modelo_final, level = 0.95)
+
+# Criar dataframe
+tabela_final <- data.frame(
+  Variável = c("Intercepto", "Taxa de Incidência", "Pobreza (%)", 
+               "Ensino Médio (%)", "Ensino Superior (%)", "Desemprego (%)",
+               "Cobertura Privada (%)", "População Branca (%)", "Outras Raças (%)"),
+  Estimativa = round(coeficientes[, 1], 4),
+  `Erro Padrão` = round(coeficientes[, 2], 4),
+  `t-valor` = round(coeficientes[, 3], 4),
+  `IC 95%` = paste0("[", round(ic_conf[, 1], 3), "; ", round(ic_conf[, 2], 3), "]"),
+  `p-valor` = ifelse(coeficientes[, 4] < 0.001, "< 0.001", round(coeficientes[, 4], 4)),
+  check.names = FALSE
+)
+
+# Criar tabela formatada com flextable
+ft <- flextable(tabela_final) %>%
+  theme_vanilla() %>%
+  bold(part = "header") %>%
+  align(align = "center", part = "all") %>%
+  align(j = 1, align = "left", part = "all") %>%
+  set_caption("Tabela 1: Coeficientes e intervalos de confiança de 95% do modelo final") %>%
+  autofit()
+
+# Exibir a tabela
+ft
+```
+
+Todas as variáveis inseridas apresentaram relevância estatística significativa ($p$-valor $< 0,01$). Mantendo as demais variáveis constantes (critério *ceteris paribus*), as principais interpretações e seus respectivos Intervalos de Confiança de 95% são:
+
+* **Taxa de Incidência (`incidenceRate`):** Para cada aumento de 1 unidade na taxa de incidência de câncer, a taxa de mortalidade estimada aumenta em **0,21** unidades (IC 95%: $[0,195; 0,222]$). É o preditor clínico mais forte do modelo.
+* **Nível Educacional (`PctBachDeg25_Over` vs `PctHS25_Over`):** O ensino superior atua como um forte fator de proteção. O aumento de 1% na proporção de habitantes com diploma universitário reduz a mortalidade por câncer em **1,01** unidades (IC 95%: $[-1,282; -0,742]$). Em contrapartida, municípios com maior concentração de indivíduos que possuem apenas o ensino médio (`PctHS25_Over`) registram um incremento de **0,52** na taxa de mortes (IC 95%: $[0,346; 0,698]$).
+* **Vulnerabilidade Econômica (`povertyPercent` e `PctUnemployed16_Over`):** Condições de vulnerabilidade social estão diretamente associadas a desfechos negativos de saúde. 
+    * O aumento de 1% na taxa de **pobreza** eleva a mortalidade em **0,48** unidades (IC 95%: $[0,261; 0,694]$).
+    * O aumento de 1% na taxa de **desemprego** eleva a mortalidade em **0,49** unidades (IC 95%: $[0,199; 0,789]$).
+* **Cobertura de Saúde Privada (`PctPrivateCoverage`):** O acesso a planos de saúde privados funciona como um atenuante na mortalidade, gerando uma redução de **0,37** mortes para cada 1% de aumento na cobertura (IC 95%: $[-0,510; -0,236]$). Isto evidencia o impacto do acesso rápido a diagnósticos e terapias oncológicas.
+* **Composição Racial (`PctWhite` e `PctOtherRace`):** Ambas as variáveis apresentam efeitos protetivos. O aumento de 1% na população branca reduz a mortalidade em **0,11** unidades (IC 95%: $[-0,16; -0,05]$), enquanto o aumento de 1% em outras raças reduz em **0,83** unidades (IC 95%: $[-1,06; -0,60]$).
+
+
+
+```{r fig-efeitos-coeficientes, fig.cap = "Efeito das variáveis preditoras na mortalidade por câncer", fig.align = 'center', fig.width = 5, fig.height = 3, fig.pos = "H"}
+# Gráfico de efeitos (coeficientes) com intervalos de confiança
+# Preparando os dados para o gráfico de coeficientes
+coef_df <- data.frame(
+  Variavel = c("Poverty %", "Unemployment %", "Private Coverage %", 
+               "High School %", "Bachelor's Degree %", "White %", "Other Race %",
+               "Incidence Rate"),
+  Estimativa = c(coeficientes["povertyPercent", 1],
+                 coeficientes["PctUnemployed16_Over", 1],
+                 coeficientes["PctPrivateCoverage", 1],
+                 coeficientes["PctHS25_Over", 1],
+                 coeficientes["PctBachDeg25_Over", 1],
+                 coeficientes["PctWhite", 1],
+                 coeficientes["PctOtherRace", 1],
+                 coeficientes["incidenceRate", 1]),
+  LI = c(ic_conf["povertyPercent", 1],
+         ic_conf["PctUnemployed16_Over", 1],
+         ic_conf["PctPrivateCoverage", 1],
+         ic_conf["PctHS25_Over", 1],
+         ic_conf["PctBachDeg25_Over", 1],
+         ic_conf["PctWhite", 1],
+         ic_conf["PctOtherRace", 1],
+         ic_conf["incidenceRate", 1]),
+  LS = c(ic_conf["povertyPercent", 2],
+         ic_conf["PctUnemployed16_Over", 2],
+         ic_conf["PctPrivateCoverage", 2],
+         ic_conf["PctHS25_Over", 2],
+         ic_conf["PctBachDeg25_Over", 2],
+         ic_conf["PctWhite", 2],
+         ic_conf["PctOtherRace", 2],
+         ic_conf["incidenceRate", 2])
+)
+
+# Ordenar por magnitude do efeito
+coef_df <- coef_df[order(coef_df$Estimativa),]
+
+ggplot(coef_df, aes(x = reorder(Variavel, Estimativa), y = Estimativa)) +
+  geom_point(size = 3, color = "#2c3e50") +
+  geom_errorbar(aes(ymin = LI, ymax = LS), width = 0.2, color = "#25626d", linewidth = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "#ff9038", linewidth = 0.8) +
+  coord_flip() +
+  labs(x = "Variáveis Preditores",
+       y = "Efeito estimado na taxa de mortalidade (mortes por 100 mil habitantes)") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10)))
+```
+A Figura \@ref(fig:fig-efeitos-coeficientes) apresenta os efeitos estimados de cada variável preditora sobre a taxa de mortalidade por câncer, juntamente com seus respectivos intervalos de confiança de 95%. Variáveis com intervalo de confiança inteiramente à direita de zero (como `Poverty %`, `Unemployment %`, `High School %` e `Incidence Rate`) indicam efeitos positivos (aumentam a mortalidade). Já variáveis com intervalo inteiramente à esquerda de zero (como `Private Coverage %`, `Bachelor's Degree %`, `White %` e `Other Race %`) indicam efeitos negativos (reduzem a mortalidade). A magnitude do efeito é dada pela posição do ponto estimado.
+
+## Avaliação do Ajuste Preditivo
+```{r fig-regressao, fig.cap = "Valores Preditos vs Observados", fig.align = 'center', fig.width = 6, fig.height = 5, fig.pos = "H"}
+valores_preditos <- predict(modelo_final)
+valores_observados <- dados_cancer$TARGET_deathRate
+
+# Opção 1: Transparência intermediária (mais usada)
+plot(valores_preditos, valores_observados,
+     xlab = "Valores Preditos (Modelo)",
+     ylab = "Valores Observados (Reais)",
+     pch = 16, col = adjustcolor("#25626d", alpha.f = 0.3))
+abline(a = 0, b = 1, col = "#ff9038", lwd = 2)
+
+r_quadrado <- round(summary(modelo_final)$adj.r.squared, 4)
+text(x = min(valores_preditos), y = max(valores_observados), 
+     labels = paste("R² ajustado =", r_quadrado), 
+     pos = 4, font = 2)
+
+```
+Como parte principal, a Figura \@ref(fig:fig-regressao) apresenta o gráfico de Valores Preditos versus Observados, que confirma visualmente a qualidade do modelo ajustado. 
+
+A concentração da nuvem de pontos ao redor da reta de identidade ($y = x$) demonstra que o modelo replica com fidelidade o comportamento da mortalidade por câncer na maioria dos condados analisados. 
+
+A distribuição simétrica da dispersão vertical evidencia a ausência de vieses sistemáticos de subestimação ou superestimação. O coeficiente de determinação ajustado ($R^2$ ajustado = `r r_quadrado`) indica que o modelo explica aproximadamente 49% da variabilidade da taxa de mortalidade por câncer. Ademais, a capacidade do modelo de prever com exatidão cenários atípicos valida a consistência dos coeficientes estimados frente à variabilidade natural dos dados demográficos.
+
+# Discussão {#sec-discussao} 
+
+<!-- Discuta os resultados do modelo tendo em vista os objetivos propostos. Relevancia/utilidade do modelo no contexto do problema -->
+O modelo final selecionado para explicar a taxa de mortalidade por câncer (`TARGET_deathRate`) utiliza os indicadores `incidenceRate`, `povertyPercent`, `PctHS25_Over`, `PctBachDeg25_Over`, `PctUnemployed16_Over`, `PctPrivateCoverage`, `PctWhite` e `PctOtherRace`. Esse conjunto de variáveis evidencia que a mortalidade por câncer não está associada apenas à ocorrência da doença, mas também a características socioeconômicas, educacionais e de acesso à saúde da população.
+
+A variável `incidenceRate` foi naturalmente uma das mais importantes do modelo, uma vez que regiões com maior incidência de diagnósticos tendem a apresentar maior número de óbitos pela doença. Esse resultado reforça a relação direta entre a ocorrência do câncer e a mortalidade observada nos condados analisados.
+
+Por outro lado, a presença das variáveis `povertyPercent` e `PctUnemployed16_Over` sugere que condições socioeconômicas desfavoráveis estão associadas a maiores taxas de mortalidade. Populações em situação de vulnerabilidade econômica frequentemente enfrentam maiores dificuldades para o acesso a serviços de saúde, exames preventivos, diagnóstico precoce e tratamentos especializados, fatores que podem contribuir para piores desfechos clínicos.
+
+Os indicadores educacionais `PctHS25_Over` e `PctBachDeg25_Over` também foram selecionados pelo modelo, indicando que o nível de escolaridade da população possui relação com a mortalidade por câncer. A educação pode influenciar a adoção de hábitos saudáveis, o conhecimento sobre fatores de risco, a busca por acompanhamento médico e a adesão a tratamentos, funcionando como um importante determinante social da saúde.
+
+A variável `PctPrivateCoverage` revela a a relevância do acesso à assistência médica. Regiões com maior cobertura de planos de saúde privados tendem a oferecer melhores oportunidades de diagnóstico precoce e acesso a tratamentos especializados, o que pode impactar positivamente os índices de sobrevivência e reduzir a mortalidade associada ao câncer.
+
+As variáveis demográficas `PctWhite` e `PctOtherRace` indicam que características populacionais também apresentam associação com as taxas de mortalidade. Entretanto, essas variáveis não devem ser entendidas como fatores causais diretos, mas sim como possíveis indicadores de desigualdades estruturais, diferenças socioeconômicas, condições de acesso aos serviços de saúde e outros fatores correlacionados que não são completamente capturados pelas demais variáveis do modelo.
+
+# Apêndice {#sec-apendice}
+
+
+<!-- aqui devem estar resultados que apoiam suas análises (modelos tentados, código de seleção de modelo/etc...), obrigatoriamente, esta seção deve conter o diagnóstico do modelo: gráficos e testes relevantes. -->
+Nesta seção, realizamos a validação do modelo de regressão linear múltipla proposto. O objetivo é checar de forma detalhada se as hipóteses clássicas sobre os resíduos e as variáveis foram atendidas, garantindo a integridade dos resultados encontrados. A análise foi estruturada seguindo a ordem de diagnóstico visual dos resíduos, testes estatísticos formais e verificação de pontos influentes.
+
+Para avaliar inicialmente o comportamento dos erros do modelo, geramos os quatro gráficos clássicos de diagnóstico apresentados na Figura \@ref(fig:fig-diagnostico-residuos).
+
+```{r fig-diagnostico-residuos, fig.cap = "Gráficos de diagnóstico dos resíduos do modelo final", fig.align = 'center', fig.width = 7, fig.height = 5, fig.pos = "H"}
+# Definindo layout 2x2
+par(mfrow = c(2, 2))
+
+# Gráficos de diagnóstico do modelo
+plot(modelo_final, which = 1, 
+     caption = "", 
+     pch = 16, col = adjustcolor("#25626d", alpha.f = 0.3))
+title("Resíduos vs Valores Ajustados", line = 0.5)
+
+# --- ALTERAÇÃO AQUI ---
+# Instale o pacote caso não tenha: install.packages("car")
+car::qqPlot(modelo_final, 
+            id = FALSE,        # Remove a identificação automática dos pontos mais distantes
+            pch = 16, col = adjustcolor("#25626d", alpha.f = 0.3),
+            col.lines = "red") # Cor da linha principal
+title("Q-Q Plot dos Resíduos", line = 0.5)
+# ----------------------
+
+plot(modelo_final, which = 3, 
+     caption = "", 
+     pch = 16, col = adjustcolor("#25626d", alpha.f = 0.3))
+title("Scale-Location Plot", line = 0.5)
+
+plot(modelo_final, which = 5, 
+     caption = "", 
+     pch = 16, col = adjustcolor("#25626d", alpha.f = 0.3))
+title("Resíduos vs Alavancagem", line = 0.5)
+
+# Resetando layout
+par(mfrow = c(1, 1))
+```
+No gráfico Resíduos vs Valores Ajustados, a linha vermelha suavizada ficou bem próxima de uma reta horizontal no zero na maior parte da extensão dos dados. Isso indica que a relação de linearidade foi bem capturada. No entanto, os pontos se espalham um pouco mais verticalmente na parte central e direita, sugerindo que a variância dos erros pode não ser constante (heterocedasticidade).
+
+Essa suspeita ganha força no terceiro painel, o Scale-Location Plot, onde a linha vermelha guia mostra uma leve inclinação para cima, confirmando que a variabilidade dos resíduos padronizados muda ao longo dos valores previstos.
+
+No gráfico Q-Q Plot dos Resíduos, usado para avaliar a normalidade, a maioria dos pontos centrais acompanha satisfatoriamente a linha diagonal de referência. As exceções ficam nas extremidades (caudas inferior e superior), onde alguns condados específicos se afastam da reta. Isso sinaliza que os resíduos têm caudas ligeiramente mais pesadas que uma distribuição normal perfeita.
+
+Por fim, o gráfico de Resíduos vs Alavancagem ajuda a identificar pontos que combinam resíduos altos com posições extremas nas variáveis preditoras. Nota-se que nenhum ponto chegou a cruzar as linhas limites da Distância de Cook (que nem sequer aparecem na escala visual padrão do gráfico), indicando que o modelo não está sofrendo distorções severas por observações isoladas nesta visualização.
+
+Para complementar a análise visual e obter um veredito matemático, rodamos testes de hipóteses formais sobre os resíduos. Os resultados estão resumidos na Tabela \@ref(tab:tab-testes-estatisticos).
+
+```{r tab-testes-estatisticos, echo=FALSE, fig.pos="H"}
+library(lmtest)
+library(car)
+
+# Calculando os testes
+residuos <- residuals(modelo_final)
+
+# Shapiro-Wilk (normalidade)
+teste_shapiro <- shapiro.test(residuos)
+
+# Breusch-Pagan (homocedasticidade)
+teste_bp <- bptest(modelo_final)
+
+# Durbin-Watson (independência)
+teste_dw <- durbinWatsonTest(modelo_final)
+
+# Criando tabela única (SEM a primeira coluna de códigos)
+dt_testes <- data.frame(
+  Teste = c("Shapiro-Wilk (Normalidade)", 
+            "Breusch-Pagan (Homocedasticidade)", 
+            "Durbin-Watson (Independência)"),
+  Estatística = c(round(teste_shapiro$statistic, 4),
+                  round(teste_bp$statistic, 4),
+                  round(teste_dw$dw, 4)),
+  `p-valor` = c(round(teste_shapiro$p.value, 6),
+                round(teste_bp$p.value, 6),
+                round(teste_dw$p, 4)),
+  Decisão = c(ifelse(teste_shapiro$p.value > 0.05, "Normal", "Não normal"),
+              ifelse(teste_bp$p.value > 0.05, "Homocedástico", "Heterocedástico"),
+              ifelse(teste_dw$p > 0.05, "Independentes", "Autocorrelacionados")),
+  check.names = FALSE
+)
+
+# Exibir tabela SEM os nomes das linhas (rownames = FALSE)
+kable(dt_testes, booktabs = TRUE, 
+      caption = "Testes de diagnóstico dos resíduos do modelo final",
+      row.names = FALSE) |>
+  kable_styling(latex_options = "HOLD_position")
+```
+Como mostrado na Tabela \@ref(tab:tab-testes-estatisticos), todos os três testes estatísticos retornaram um $p$-valor menor que 0.05, rejeitando as hipóteses nulas teóricas:Shapiro-Wilk (Normalidade) [@shapiro1965analysis]: Confirmou que os resíduos não seguem uma distribuição perfeitamente normal;Breusch-Pagan (Homocedasticidade) [@breusch1979simple]: Teoricamente falando, esta tabela nos diz que há uma presença de heterocedasticidade, indicando que a variância dos erros não é constante;Durbin-Watson (Independência) [@durbin1951testing]: Indicou que existe algum nível de autocorrelação nos resíduos ($\text{Estatística} = 1,72$).
+
+Para aprofundar a busca por observações que pudessem estar distorcendo as estimativas dos nossos coeficientes, analisamos especificamente a Distância de Cook de cada observação na Figura \@ref(fig:fig-cooks-distance).
+
+```{r fig-cooks-distance, fig.cap = "Distância de Cook para identificação de pontos influentes", fig.align = 'center', fig.width = 6, fig.height = 4, fig.pos = "H"}
+# Distância de Cook
+plot(modelo_final, which = 4, 
+     caption = "Distância de Cook",
+     pch = 16, col = "#25626d")
+```
+Uma regra prática comum na literatura aponta que valores de Distância de Cook maiores do que 0,5 ou 1,0 indicam pontos altamente influentes que merecem exclusão ou correção [@henderson1981building]. Analisando a Figura \@ref(fig:fig-cooks-distance), vemos que o maior valor registrado pertence ao condado de índice 282, que ficou ligeiramente acima de 0,15. Outros pontos destacados, como o 1059 e o 2714, ficaram abaixo de 0,06. Como nenhuma observação chegou nem perto do limite crítico de 0,5, concluímos que não há pontos influentes prejudicando o ajuste geral do modelo.
+
+Apesar de os testes formais terem apontado violações nos pressupostos teóricos de normalidade, homocedasticidade e independência, o modelo proposto permanece válido e confiável devido ao tamanho da amostra e o TCL já que nosso banco de dados contém uma amostra de milhares de condados americano e, que pelo Teorema Central do Limite (TCL), a falta de normalidade dos resíduos deixa de ser um problema crítico em amostras grandes, pois a distribuição amostral dos estimadores de Mínimos Quadrados Ordinários converge para a normalidade de qualquer forma. Isso garante a validade dos testes $t$ e dos intervalos de confiança apresentados na Seção \@ref(sec-modelo). Um outro ponto é a natureza do problemas, assim problemas como heterocedasticidade e uma leve autocorrelação nos erros são perfeitamente esperados em estudos epidemiológicos baseados em divisões geográficas. Condados vizinhos costumam compartilhar realidades socioeconômicas parecidas, gerando esse comportamento nos resíduos. Dado que o modelo conseguiu explicar quase metade de toda a variação da taxa de mortes por câncer ($R^2 \text{ ajustado} \approx 49\%$), ele se mostra uma ferramenta muito robusta para descrever as tendências gerais da doença.
+
+# Bibliografia {#sec-bibliografia}
+
+<!-- não coloque nada aqui, será feito automaticamente se vc usar .bib e @ para citar referencias no texto, conforme ilustrado no template de exemplo-->
+
+
+<!-- para construir o .bib, use o cite https://www.doi2bib.org/, caso seja uma referência com DOI --> 
+
+<!-- ao utilizar cada método, cite o autor e também referencie o pacote utilizado, no R, pegue o .bib usando citation("nomedopacote") -->
+
